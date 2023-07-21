@@ -1,0 +1,191 @@
+#Predict consumer likeliness and sweetness based on chemical composition using Tensorflow
+
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import tensorflow_addons.metrics
+import seaborn as sns
+
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Input, GaussianNoise, Dropout
+from tensorflow.keras import initializers
+from tensorflow_addons.metrics import RSquare
+import numpy as np
+
+import itertools
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+
+
+pd.set_option("max_column",11)
+
+
+main_data = pd.read_excel('project_01.xlsx',sheet_name="Sheet1")
+main_data.head()
+main_data.isna() #detect missing values
+
+
+#Shuffle data:
+main_data = main_data.iloc[np.random.permutation(len(main_data))]
+
+#Shuffle and repeat
+print()
+
+#main_data['Sweetness'].hist(bins=20)
+#main_data['Liking'].hist(bins=20)
+# #excluding some data
+main_data = main_data[(main_data['Sweetness']>1) & (main_data['Sweetness']<2.3)]
+main_data=main_data[(main_data['Liking']>5) & (main_data['Liking']< 6.6)]
+
+# #reset the index
+main_data=main_data.reset_index(drop=True)
+#Split data between train and test
+train, test= train_test_split(main_data,test_size=0.2, random_state=2)
+#split train between train and val
+train,val = train_test_split(main_data,test_size=0.25,random_state=2)
+
+
+#Training Statistics
+train_stats = train.describe() #stats for data
+train_stats.pop('Sweetness') #Pop Sweetness from the dataframe
+train_stats.pop('Liking')
+train_stats
+print("---")
+
+train_stats=train_stats.transpose()
+print(train_stats)
+
+# #Format output data
+
+train.head()
+                                                    #Get the data
+#Format output
+def format_output(main_data):
+
+    sweetness = main_data.pop('Sweetness')
+    sweetness = np.array(sweetness)
+
+    liking = main_data.pop('Liking')
+
+    liking= np.array(liking)
+
+    return (sweetness,liking)
+
+train_Y = format_output(train)
+val_Y = format_output(val)
+test_Y= format_output(test)
+
+print(train.head())
+
+#Correlation between chemical inputs:
+print("Pearson plot")
+fig,(ax1,ax2) = plt.subplots(1,2,figsize=(15,6.5))
+pearson_corr = main_data.iloc[:,1:13].corr(method='pearson')
+kendal_corr = main_data.iloc[:,1:13].corr(method='kendall')
+
+mask = np.triu(np.ones_like(pearson_corr,dtype=bool),k=0)
+cmap = sns.diverging_palette(150,276)
+
+sns.heatmap(pearson_corr,mask=mask,annot=True,fmt=',.2f',cmap=cmap,cbar=True, cbar_kws={"shrink": .5}, square=True, linewidths=.6,
+            vmax=0.8,vmin=-0.8,center=0, ax=ax1)
+ax1.set_title('Pearson Correlation')
+
+sns.heatmap(kendal_corr, mask=mask, annot=True, fmt=',.2f',cmap='YlGnBu', cbar=True, xticklabels = kendal_corr.columns.values,
+            yticklabels=kendal_corr.columns.values,ax=ax2)
+plt.show()
+
+#normalize the data
+
+def norm(x):
+    return (x-train_stats['mean'])/train_stats['std']
+
+#Normalize train, dev, test
+
+norm_train_X=norm(train)
+norm_val_X = norm(val)
+norm_test_X=norm(test)
+
+def base_model(inputs):
+    np.random.seed(2)
+
+    x= Dense(units=132, kernel_initializer=initializers.HeNormal(seed=2),  activation='linear')(inputs)
+
+    x = Dense(units=132, kernel_initializer=initializers.HeNormal(seed=2), activation='linear')(x)
+
+    x = Dense(units=132, kernel_initializer=initializers.HeNormal(seed=2), activation='linear')(x)
+
+
+    #x = Dropout(rate=0.4)(x)
+
+    #x = GaussianNoise(stddev=0.5)(x)
+    return x
+
+#Write mid model here: regularization
+
+def final_model(inputs):
+
+    x = base_model(inputs)
+
+    sweetness = Dense(units=1, activation='linear', name='Sweetness')(x)
+
+    liking = Dense(units=1, activation='linear',name='Liking')(x)
+
+    model=Model(inputs=inputs, outputs=[sweetness,liking],name="Edamame_Model")
+
+    return model
+
+
+# # #Compiling the Model
+inputs =tf.keras.layers.Input(shape=(12,))
+#rms=tf.keras.optimizers.RMSprop(learning_rate=0.000028)
+
+adam=tf.keras.optimizers.Adam(learning_rate=0.0003, beta_1=0.9, beta_2=0.999, epsilon=1e-8)
+
+
+model=final_model(inputs)
+
+#Model Performance
+print("Prediction is here")
+y_predict=model.predict(norm_test_X)
+liking_pred_trial= y_predict[0]
+sweetness_pred = y_predict[0]
+print()
+#y_true = tf.data.Dataset.from_generator(test)
+#R2=r2_score(norm_test_X, y_predict, multioutput='variance_weighted')
+# model.compile(optimizer=adam,loss={'Sweetness':tf.keras.losses.MeanSquaredError(),
+#                                   'Liking':tf.keras.losses.MeanSquaredError()},
+#               metrics={'Sweetness':tf.keras.metrics.RootMeanSquaredError(),
+#                      'Liking':tf.keras.metrics.RootMeanSquaredError()})
+model.compile(optimizer=adam,loss={'Sweetness':tf.keras.losses.MeanSquaredError(),
+                                  'Liking':tf.keras.losses.MeanSquaredError()},
+              metrics={'Sweetness':tensorflow_addons.metrics.RSquare(name='r_square',y_shape=(1,), multioutput='uniform_average', num_regressors=0),
+                     'Liking':tensorflow_addons.metrics.RSquare(name='r_square',y_shape=(1,), multioutput='uniform_average', num_regressors=0)})
+
+#
+#Train the model
+history=model.fit(norm_train_X,train_Y,epochs=287,verbose=1, shuffle=True, validation_data=(norm_val_X,val_Y))
+
+#Gathering training datasets
+loss, sweetness_loss,liking_loss, sweetness_accuracy, liking_accuracy= model.evaluate(x=norm_val_X, y=val_Y)
+print()
+model.summary()
+print()
+print("---")
+print(f'loss: {loss}')
+print(f'Liking_loss: {liking_loss}')
+print(f'Sweetness_loss: {sweetness_loss}')
+print(f'Sweetness_MSE: {sweetness_accuracy} ')
+print(f'Liking_MSE: {liking_accuracy} ')
+
+#Evaluate training set
+
+print("Training set: ")
+model.evaluate(norm_train_X,train_Y)
+
+#evaluate dev set
+print("Dev sdt: ")
+model.evaluate(norm_val_X,val_Y)
+#Evaluate test set
+print()
+print("Test set evaluation")
+model.evaluate(norm_test_X, test_Y)
