@@ -5,6 +5,7 @@ import tensorflow as tf
 import tensorflow_addons.metrics
 import seaborn as sns
 
+from seaborn import scatterplot
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Dense, Input, GaussianNoise, Dropout
 from tensorflow.keras import initializers
@@ -13,6 +14,9 @@ import numpy as np
 
 import itertools
 import pandas as pd
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn import linear_model
+from sklearn.metrics import accuracy_score, precision_score
 from sklearn.model_selection import train_test_split
 
 
@@ -20,7 +24,7 @@ from sklearn.model_selection import train_test_split
 pd.set_option("max_column",11)
 
 
-main_data = pd.read_excel('project_01.xlsx',sheet_name="Sheet1")
+main_data = pd.read_excel('chem_NIR_hyperspectral.xlsx',sheet_name="adjustedchemical")
 main_data.head()
 main_data.isna() #detect missing values
 
@@ -139,7 +143,7 @@ def final_model(inputs):
 inputs =tf.keras.layers.Input(shape=(12,))
 #rms=tf.keras.optimizers.RMSprop(learning_rate=0.000028)
 
-adam=tf.keras.optimizers.Adam(learning_rate=0.0003, beta_1=0.9, beta_2=0.999, epsilon=1e-8)
+adam=tf.keras.optimizers.Adam(learning_rate=0.00031, beta_1=0.915, beta_2=0.999, epsilon=1e-8)
 
 
 model=final_model(inputs)
